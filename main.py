@@ -68,7 +68,7 @@ class Global():
         
         if self.fps is None: self.fps = 30
         
-        if self.count > 10000: print(colored('WARNING: video too large.', 'red'))
+        if self.count > 1000: print(colored('WARNING: video too large.', 'red'))
         if self.size is None: self.size = self.frames[0].shape
         if self.duration is None: self.duration = self.fps * self.count
         
