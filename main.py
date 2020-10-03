@@ -112,6 +112,7 @@ def correctSize():
     if g.scaledSize() != (g.photoImages[g.cur].width(), g.photoImages[g.cur].height()):
         g.photoImages[g.cur] = ImageTk.PhotoImage(g.frames(g.cur).resize(g.scaledSize(), Image.ANTIALIAS))
         gc.collect(generation = 1)
+        g.prepared += 1
 
 def prepare():
     if g.photoImages[g.cur] is None:
@@ -203,6 +204,7 @@ def scrollCallback(e):
     scale = e.delta // 120
     rate = 0.9 ** scale
     g.zoom *= rate
+    g.prepared = sum(map(lambda x: 1 if x is not None and g.scaledSize() == (x.width(), x.height()) else 0, g.photoImages))
     updateTitle()
 
 def stream(label: tk.Canvas):
