@@ -9,6 +9,7 @@ import os
 import tempfile
 import ffmpy
 import shutil
+import gc
 
 ###############################################################################
 # 状态参数
@@ -34,9 +35,9 @@ class Global():
         else:
             video = imageio.get_reader(videoName)
         
-        print(video)
         meta = video.get_meta_data()
         print(meta)
+        self.video = video
         self.name = name
         self.pause = False
         self.cur = 0
@@ -46,42 +47,32 @@ class Global():
         self.name = os.path.basename(videoName)
         self.step = 1
         self.speed = 1.0
-        
-        if self.fps is not None and self.duration is not None: self.count = round(float(self.fps * self.duration))
-        else: self.count = 1
-        
-        self.frames = []
-        self.imageFrames = []
-        self.photoImages = []
-        for v in video.iter_data():
-            imageFrame = Image.fromarray(v)
-            self.tk.title('loading... [%03d.%d / %03d]' % (len(self.frames), 1, self.count))
-            photoImage = ImageTk.PhotoImage(imageFrame)
-            self.tk.title('loading... [%03d.%d / %03d]' % (len(self.frames), 2, self.count))
-            
-            self.frames.append(v)
-            self.imageFrames.append(imageFrame)
-            self.photoImages.append(photoImage)
-        
-        if self.fps is None or self.duration is None: self.count = len(self.frames)
-        elif self.count is None: raise Exception('Error: cannot get frame count')
-        
-        if self.fps is None: self.fps = 30
-        
-        if self.count > 1000: print(colored('WARNING: video too large.', 'red'))
-        if self.size is None: self.size = self.frames[0].shape
-        if self.duration is None: self.duration = self.fps * self.count
-        
+        self.count = video.count_frames()
         self.zoom = 1.0
+        if self.size[0] * self.size[1] > self.windowSize()[0] * self.windowSize()[1]:
+            self.zoom = 2
         self.jumpRecord = ""
         self.frameTimeCost = 0
+        self.prepared = 0
+        
+        curSize = (round(g.size[0] / g.zoom), round(g.size[1] / g.zoom))
+        self.photoImages = [None for i in range(self.count)]
+        
+        # for i in range(self.count):
+        #     self.photoImages.append(ImageTk.PhotoImage(g.frames(i).resize(curSize, Image.ANTIALIAS)))
+        
+        gc.collect(generation = 2)
+        
+        if self.count > 1000: print(colored('WARNING: video too large.', 'red'))
         
         print('Read')
         print(colored(g.name, 'green'))
         print('fps', colored(g.fps, 'yellow'))
         
-        if self.size[0] * self.size[1] > self.windowSize()[0] * self.windowSize()[1]:
-            self.zoom = 2
+    
+    def frames(self, index):
+        return Image.fromarray(self.video.get_data(index))
+        
     
     def viewSize(self):
         return (self.view.winfo_width(), self.view.winfo_height())
@@ -94,7 +85,10 @@ class Global():
     
     def viewPos(self):
         return (self.view.winfo_x() + self.viewSize()[0] // 2, self.view.winfo_y() + self.viewSize()[1] // 2)
-
+    
+    def scaledSize(self):
+        return (max(1, round(self.size[0] / self.zoom)), max(1, round(self.size[1] / self.zoom)))
+    
 g = Global()
 
 ###############################################################################
@@ -104,17 +98,29 @@ g = Global()
 ###############################################################################
 
 def updateTitle():
-    g.tk.title("[%03d / %03d] [step %d] [scale %.4f] %s | [time %.4f] |to: %s" % (g.cur + 1, g.count, g.step, g.zoom, g.name, g.frameTimeCost, g.jumpRecord))    
+    g.tk.title("[%03d / %03d] [%.0f%%] [step %d] [scale %.4f] %s | [time %.4f] | %s" % (
+        g.cur + 1, g.count,
+        g.prepared / g.count * 100,
+        g.step,
+        g.zoom,
+        g.name,
+        g.frameTimeCost,
+        g.jumpRecord
+    ))    
 
 def correctSize():
-    curSize = (max(1, round(g.size[0] / g.zoom)), max(1, round(g.size[1] / g.zoom)))
-    if curSize != g.imageFrames[g.cur].size:
-        curSize = (round(g.size[0] / g.zoom), round(g.size[1] / g.zoom))
-        g.imageFrames[g.cur] = Image.fromarray(g.frames[g.cur]).resize(curSize, Image.ANTIALIAS)
-        g.photoImages[g.cur] = ImageTk.PhotoImage(g.imageFrames[g.cur])
-    
+    if g.scaledSize() != (g.photoImages[g.cur].width(), g.photoImages[g.cur].height()):
+        g.photoImages[g.cur] = ImageTk.PhotoImage(g.frames(g.cur).resize(g.scaledSize(), Image.ANTIALIAS))
+        gc.collect(generation = 1)
+
+def prepare():
+    if g.photoImages[g.cur] is None:
+        g.photoImages[g.cur] = ImageTk.PhotoImage(g.frames(g.cur).resize(g.scaledSize(), Image.ANTIALIAS))
+        g.prepared += 1
+
 def setFrame():
     beginTime = time()
+    prepare()
     correctSize()
     imageObject = g.photoImages[g.cur]                          # tkinter 图像组件.
     if g.viewSize() != (imageObject.width(), imageObject.height()):
